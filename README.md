@@ -8,3 +8,5 @@ The files starting with 'Wavelet' are models with signals processed by Wavelet t
 The files starting with 'Time' are models in the time domain.
 
 All files denote if the validation was made by k-fold or split in the name.
+
+To run the files it's necessary to download the database from https://www.physionet.org/content/sleep-edfx/1.0.0/ and put it in the same folder of the project.
