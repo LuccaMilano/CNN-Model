@@ -7,8 +7,6 @@ import numpy as np
 from mneExtraction import EEGExtract
 from CNNCells import CNNCell1, CNNCell2, CNNCell3, CNNCell4, CNNCell5
 from Wavelet.haar import *
-from sklearn.metrics import confusion_matrix
-import seaborn as sns
 
 if __name__ == "__main__":
     mypath = "sleep-cassette"
@@ -42,13 +40,13 @@ if __name__ == "__main__":
         np.random.shuffle(indices_zero)
 
         # Select the first 600 indices for each value
-        selected_indices_ones = indices_ones[:600]
-        selected_indices_zero = indices_zero[:600]
-
+        selected_indices_ones = indices_ones[:1500]
+        selected_indices_zero = indices_zero[:1500]
+        
         combined_indices = np.concatenate([selected_indices_ones, selected_indices_zero])
         np.random.shuffle(combined_indices)
 
-        if len(combined_indices) == 1200:
+        if len(combined_indices) == 3000:
             random_arrays = patients_array[i][combined_indices]
             random_events = eventsArray[i][combined_indices]
             dataArrayFiltered.append(random_arrays)
@@ -161,21 +159,5 @@ if __name__ == "__main__":
             epochs=100,
             validation_data=([delta_wave_val, theta_wave_val, alpha_wave_val, beta_wave_val, gamma_wave_val], labels_val)
         )
-
-    test_loss, test_accuracy = concatenated_model.evaluate([delta_wave_val, theta_wave_val, alpha_wave_val, beta_wave_val, gamma_wave_val], labels_val)
-
-    predictions = concatenated_model.predict([delta_wave_val, theta_wave_val, alpha_wave_val, beta_wave_val, gamma_wave_val])
-    rounded_predictions = np.round(predictions)
-
-    # Calculate confusion matrix
-    conf_matrix = confusion_matrix(labels_val, rounded_predictions)
-
-    # Plot confusion matrix
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['Alerta', 'Sonolência'], yticklabels=['Alerta', 'Sonolência'])
-    plt.xlabel('Labels Previstos')
-    plt.ylabel('Labels verdadeiros')
-    plt.tight_layout()
-    plt.show()
 
 

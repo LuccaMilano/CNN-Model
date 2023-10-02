@@ -1,5 +1,6 @@
 from os import listdir
 from os.path import isfile, join
+from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 from pdb import set_trace as pause
 import tensorflow as tf
@@ -7,10 +8,16 @@ import os
 import numpy as np
 from mneExtraction import EEGExtract
 from Wavelet.haar import *
-from CNNCells import CNNModel1, CNNModel2
+from CNNCells import CNNModel
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
- 
+
+def scheduler(epoch, lr):
+    if epoch < 10:
+        return lr
+    else:
+        return lr * tf.math.exp(-0.1)
+
 
 if __name__ == "__main__":
     mypath = "sleep-cassette"
@@ -50,24 +57,28 @@ if __name__ == "__main__":
     C = A.reshape(-1, A.shape[-1])
     D = B.reshape(-1)
 
+    # Calculate mean and standard deviation
+    mean = np.mean(C)
+    std = np.std(C)
+
+    # Normalize the signals to zero-mean and unit variance
+    C = (C - mean) / std
+
 
     # CNN Model creation
-    model1 = CNNModel1.CNNModel(input)
-    model2 = CNNModel2.CNNModel(input)
-    
-    input = tf.keras.Input(shape=(100,1), name='input')
-    models = [model1, model2]
-    outputs = [model(input) for model in models]
-    x = tf.keras.layers.Concatenate()(outputs)
+    model = CNNModel.CNNModel()
 
-    output = tf.keras.layers.Dense(64, activation='relu')(x) 
-    output = tf.keras.layers.Dropout( 0.2, noise_shape=None, seed=None)(output)
-    output = tf.keras.layers.Dense(1, activation='sigmoid')(output)
-    conc_model = tf.keras.Model(input, output, name= 'Concatenated_Model')
-    conc_model.summary()
+    # Splitting the data
+    train_ratio = 0.7
+    test_ratio = 0.15
+    val_ratio = 0.15
+    train_data, temp_data, train_labels, temp_labels = train_test_split(C, D, test_size=(1 - train_ratio))
+    test_data, val_data, test_labels, val_labels = train_test_split(temp_data, temp_labels, test_size=(val_ratio / (test_ratio + val_ratio)))
+
 
     # Define the hyperparameters for Adam optimizer
-    learning_rate = 0.0001
+    #learning_rate = 1.2341e-07
+    learning_rate = 0.001
     beta1 = 0.9
     beta2 = 0.999
     epsilon = 1e-08
@@ -80,57 +91,47 @@ if __name__ == "__main__":
         epsilon=epsilon
     )
 
-    conc_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
-
-    num_folds = 5
-    kf = KFold(n_splits=num_folds)
-
-    for fold, (train_indices, val_indices) in enumerate(kf.split(D)):
-        print(f"Fold {fold + 1}/{num_folds}")
-
-        data_train = C[train_indices]
-        labels_train = D[train_indices]
-
-        data_val = C[val_indices]
-        labels_val = D[val_indices]
-
-        history = conc_model.fit(
-            x=data_train,
-            y=labels_train,
-            batch_size=64,
-            epochs=20,
-            validation_data=(data_val, labels_val)
-        )
+    initial_learning_rate = 0.001
+    #model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=initial_learning_rate), loss='binary_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+    
+    history = model.fit(
+        x=train_data,
+        y=train_labels,
+        batch_size=64,
+        epochs=100,
+        callbacks=[callback],
+        validation_data=(val_data, val_labels)
+    )
 
     plt.figure(figsize=(12, 4))
 
     plt.subplot(1, 2, 1)
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
+    plt.plot(history.history['loss'], label='Valor da função de perda (treinamento)')
+    plt.plot(history.history['val_loss'], label='Valor da função de perda (validação)')
+    plt.xlabel('Época')
+    plt.ylabel('BCE')
     plt.legend()
 
     # Plotting the training accuracy and validation accuracy
     plt.subplot(1, 2, 2)
-    plt.plot(history.history['accuracy'], label='Training Accuracy')
-    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.title('Training and Validation Accuracy')
+    plt.plot(np.array(history.history['accuracy']) * 100, label='Acurácia (treinamento)')
+    plt.plot(np.array(history.history['val_accuracy']) * 100, label='Acurácia (validação)')
+    plt.xlabel('Época')
+    plt.ylabel('Acurácia (%)')
     plt.legend()
 
     plt.tight_layout()
+    plt.savefig("curveFunction1Model.pdf",bbox_inches='tight')
     plt.show()
+    test_loss, test_accuracy = model.evaluate(test_data, test_labels)
 
-    test_loss, test_accuracy = conc_model.evaluate(data_val, labels_val)
-
-    predictions = conc_model.predict(data_val)
+    predictions = model.predict(test_data)
     rounded_predictions = np.round(predictions)
 
     # Calculate confusion matrix
-    conf_matrix = confusion_matrix(labels_val, rounded_predictions)
+    conf_matrix = confusion_matrix(test_labels, rounded_predictions)
 
     # Plot confusion matrix
     plt.figure(figsize=(8, 6))

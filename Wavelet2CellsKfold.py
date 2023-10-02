@@ -7,6 +7,8 @@ import numpy as np
 from mneExtraction import EEGExtract
 from CNNCells import CNNCell1, CNNCell2
 from Wavelet.haar import *
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 
 if __name__ == "__main__":
     mypath = "sleep-cassette"
@@ -18,6 +20,17 @@ if __name__ == "__main__":
         eventsArray.append(epochs_train.epochs.events[:, 2])
         dataArray.append(epochs_train.epochs.get_data())
 
+
+    dataArray = [item[:][:, 1, :] for item in dataArray]
+    
+    patients_array = []
+    for i in range(0, len(dataArray)):
+        combined_array = []
+        for j in range(0, len(dataArray[i])-1):
+            combined_array.append(np.concatenate((dataArray[i][j], dataArray[i][j+1][:28])))
+        combined_array.append(np.concatenate((dataArray[i][-1], dataArray[i][0][:28])))
+        patients_array.append(np.array(combined_array))
+   
     # Array filtering
     dataArrayFiltered, eventsArrayFiltered = [], []
     for i in range(0,23):
@@ -28,30 +41,31 @@ if __name__ == "__main__":
         np.random.shuffle(indices_ones)
         np.random.shuffle(indices_zero)
 
-        # Select the first 100 indices for each value
+        # Select the first 600 indices for each value
         selected_indices_ones = indices_ones[:600]
         selected_indices_zero = indices_zero[:600]
 
         combined_indices = np.concatenate([selected_indices_ones, selected_indices_zero])
         np.random.shuffle(combined_indices)
+
         if len(combined_indices) == 1200:
-            random_arrays = dataArray[i][combined_indices]
+            random_arrays = patients_array[i][combined_indices]
             random_events = eventsArray[i][combined_indices]
             dataArrayFiltered.append(random_arrays)
             eventsArrayFiltered.append(random_events)
     
-    dataArrayFiltered = [item[:][:, 1, :] for item in dataArrayFiltered]
+    dataArrayFiltered = [item[:][:, :] for item in dataArrayFiltered]
     A = np.array(dataArrayFiltered)
     B = np.array(eventsArrayFiltered)
     C = A.reshape(-1, A.shape[-1])
     D = B.reshape(-1)
-       
-    # Ajust array to have 128 in each epoch so we can do Wavelets
-    combined_array = []
-    for i in range(0, len(C)-1):
-        combined_array.append(np.concatenate((C[i], C[i+1][:28])))
-    combined_array.append(np.concatenate((C[-1], C[0][:28])))
-    C = np.array(combined_array)
+
+     # Calculate mean and standard deviation
+    mean = np.mean(C)
+    std = np.std(C)
+
+    # Normalize the signals to zero-mean and unit variance
+    C = (C - mean) / std
 
     # Wave filtering with Butterworth
     gamma_wave, beta_wave, theta_wave, alpha_wave, delta_wave = [],[],[],[],[]
@@ -120,25 +134,40 @@ if __name__ == "__main__":
         print(f"Fold {fold + 1}/{num_folds}")
 
         delta_wave_train = delta_wave[train_indices]
-        #theta_wave_train = theta_wave[train_indices]
-        #alpha_wave_train = alpha_wave[train_indices]
-        #beta_wave_train = beta_wave[train_indices]
+        theta_wave_train = theta_wave[train_indices]
+        alpha_wave_train = alpha_wave[train_indices]
+        beta_wave_train = beta_wave[train_indices]
         gamma_wave_train = gamma_wave[train_indices]
         labels_train = D[train_indices]
 
         delta_wave_val = delta_wave[val_indices]
-        #theta_wave_val = theta_wave[val_indices]
-        #alpha_wave_val = alpha_wave[val_indices]
-        #beta_wave_val = beta_wave[val_indices]
+        theta_wave_val = theta_wave[val_indices]
+        alpha_wave_val = alpha_wave[val_indices]
+        beta_wave_val = beta_wave[val_indices]
         gamma_wave_val = gamma_wave[val_indices]
         labels_val = D[val_indices]
 
         concatenated_model.fit(
-            x=[delta_wave_train, gamma_wave_train],
+            x=[delta_wave_train, theta_wave_train],
             y=labels_train,
             batch_size=64,
-            epochs=100,
-            validation_data=([delta_wave_val, gamma_wave_val], labels_val)
+            epochs=20,
+            validation_data=([delta_wave_val, theta_wave_val], labels_val)
         )
+
+
+    predictions = concatenated_model.predict([delta_wave_val, theta_wave_val])
+    rounded_predictions = np.round(predictions)
+
+    # Calculate confusion matrix
+    conf_matrix = confusion_matrix(labels_val, rounded_predictions)
+
+    # Plot confusion matrix
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['Alerta', 'Sonolência'], yticklabels=['Alerta', 'Sonolência'])
+    plt.xlabel('Labels Previstos')
+    plt.ylabel('Labels verdadeiros')
+    plt.tight_layout()
+    plt.show()
 
 

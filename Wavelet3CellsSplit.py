@@ -9,7 +9,6 @@ from mneExtraction import EEGExtract
 from CNNCells import CNNCell1, CNNCell2, CNNCell3, CNNCell4, CNNCell5
 from Wavelet.haar import *
 from sklearn.metrics import confusion_matrix
-from sklearn.metrics import f1_score
 import seaborn as sns
 
 # Wave filtering with Wavelet
@@ -125,20 +124,16 @@ if __name__ == "__main__":
     input = tf.keras.Input(shape=(128,1))
     input2 = tf.keras.Input(shape=(128,1))
     input3 = tf.keras.Input(shape=(128,1))
-    input4 = tf.keras.Input(shape=(128,1))
-    input5 = tf.keras.Input(shape=(128,1))
     model1 = CNNCell1.CNNModel(input)
     model2 = CNNCell2.CNNModel(input2)
     model3 = CNNCell3.CNNModel(input3)
-    model4 = CNNCell4.CNNModel(input4)
-    model5 = CNNCell5.CNNModel(input5)
 
-    combined = tf.keras.layers.Concatenate()([model1, model2, model3, model4, model5])
+    combined = tf.keras.layers.Concatenate()([model1, model2, model3])
     output = tf.keras.layers.Dense(64, activation='relu')(combined) 
     output = tf.keras.layers.Dropout( 0.2, noise_shape=None, seed=None)(output)
     output = tf.keras.layers.Dense(1, activation='sigmoid')(output)
 
-    concatenated_model = tf.keras.Model(inputs=[input, input2, input3, input4, input5], outputs=output,name= 'Concatenated_Model_Frequency')
+    concatenated_model = tf.keras.Model(inputs=[input, input2, input3], outputs=output,name= 'Concatenated_Model_Frequency')
     concatenated_model.summary()
 
     # Define the hyperparameters for Adam optimizer
@@ -159,43 +154,42 @@ if __name__ == "__main__":
     #concatenated_model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=initial_learning_rate), loss='binary_crossentropy', metrics=['accuracy'])
     concatenated_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
-    
+    #delta_wave_train, theta_wave_train, alpha_wave_train, beta_wave_train, gamma_wave_train
     history = concatenated_model.fit(
-        x=[delta_wave_train, theta_wave_train, alpha_wave_train, beta_wave_train, gamma_wave_train],
+        x=[alpha_wave_train, beta_wave_train, gamma_wave_train],
         y=train_labels,
         batch_size=64,
         epochs=100,
         callbacks=[callback],
-        validation_data=([delta_wave_val, theta_wave_val, alpha_wave_val, beta_wave_val, gamma_wave_val], val_labels)
+        validation_data=([alpha_wave_val, beta_wave_val, gamma_wave_val], val_labels)
     )
 
     plt.figure(figsize=(12, 4))
 
     plt.subplot(1, 2, 1)
-    plt.plot(history.history['loss'], label='Valor da função de perda (treinamento)')
-    plt.plot(history.history['val_loss'], label='Valor da função de perda (validação)')
-    plt.xlabel('Época')
-    plt.ylabel('BCE')
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
     plt.legend()
 
     # Plotting the training accuracy and validation accuracy
     plt.subplot(1, 2, 2)
-    plt.plot(np.array(history.history['accuracy']) * 100, label='Acurácia (treinamento)')
-    plt.plot(np.array(history.history['val_accuracy']) * 100, label='Acurácia (validação)')
-    plt.xlabel('Época')
-    plt.ylabel('Acurácia (%)')
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.title('Training and Validation Accuracy')
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig("curveFunction.pdf",bbox_inches='tight')
     plt.show()
 
-    test_loss, test_accuracy = concatenated_model.evaluate([delta_wave_test, theta_wave_test, alpha_wave_test, beta_wave_test, gamma_wave_test], test_labels)
+    test_loss, test_accuracy = concatenated_model.evaluate([alpha_wave_test, beta_wave_test, gamma_wave_test], test_labels)
 
-    predictions = concatenated_model.predict([delta_wave_test, theta_wave_test, alpha_wave_test, beta_wave_test, gamma_wave_test])
+    predictions = concatenated_model.predict([alpha_wave_test, beta_wave_test, gamma_wave_test])
     rounded_predictions = np.round(predictions)
-    f1 = f1_score(test_labels, rounded_predictions, average='binary')
-    print(f'F1 Score: {f1}')
 
     # Calculate confusion matrix
     conf_matrix = confusion_matrix(test_labels, rounded_predictions)

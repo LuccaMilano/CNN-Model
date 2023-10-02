@@ -1,16 +1,12 @@
+from CNNCells import CNNModel
+from mneExtraction import EEGExtract
+import tensorflow as tf
+from pdb import set_trace as pause
 from os import listdir
 from os.path import isfile, join
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import KFold
-from pdb import set_trace as pause
-import tensorflow as tf
-import os
 import numpy as np
-from mneExtraction import EEGExtract
-from Wavelet.haar import *
-from CNNCells import CNNModel1, CNNModel2
-from sklearn.metrics import confusion_matrix
-import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 def scheduler(epoch, lr):
     if epoch < 10:
@@ -24,15 +20,14 @@ if __name__ == "__main__":
 
     allFiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
     eventsArray, dataArray = [], []
-    for i in range (0,46,2): #23 patients
+    for i in range (0,4,2): #23 patients
         epochs_train = EEGExtract.EEGClass("sleep-cassette/" + allFiles[i], "sleep-cassette/" + allFiles[i+1])
         eventsArray.append(epochs_train.epochs.events[:, 2])
         dataArray.append(epochs_train.epochs.get_data())
     
-
     # Array filtering
     dataArrayFiltered, eventsArrayFiltered = [], []
-    for i in range(0,23):
+    for i in range(0,2):
         indices_ones = np.where(eventsArray[i] == 1)[0]
         indices_zero = np.where(eventsArray[i] == 0)[0]
 
@@ -56,30 +51,61 @@ if __name__ == "__main__":
     A = np.array(dataArrayFiltered)
     B = np.array(eventsArrayFiltered)
     C = A.reshape(-1, A.shape[-1])
-    D = B.reshape(-1)
+    D = B.reshape(-1) 
 
-    # Calculate mean and standard deviation
-    mean = np.mean(C)
-    std = np.std(C)
+    vmin = -70
+    vmax = 70
 
-    # Normalize the signals to zero-mean and unit variance
-    C = (C - mean) / std
+    time = np.arange(0, 1, 1/100)
+    for i in range(0, len(D)):
+        if D[i] == 0:
+            print("Acordado")
+            C[i] *= 1e6
+            plt.figure(figsize=(12, 2))
+            plt.rcParams.update({
+                "text.usetex": True,
+                "font.family": "serif",
+            })
+            plt.plot(time, C[i])
+            plt.xlabel('Tempo (s)')
+            plt.ylabel('Tensão (µV)')
+            plt.ylim([vmin, vmax])
+            plt.tight_layout()
+            plt.savefig("alert4.pdf",bbox_inches='tight')
+            plt.show()
+        if D[i] == 1:
+            print("Sonolência")
+            C[i] *= 1e6
+            plt.figure(figsize=(12, 2))
+            plt.rcParams.update({
+                "text.usetex": True,
+                "font.family": "serif",
+            })
+            plt.plot(time, C[i])
+            plt.xlabel('Tempo (s)')
+            plt.ylabel('Tensão (µV)')
+            plt.ylim([vmin, vmax])
+            plt.tight_layout()
+            plt.savefig("drowsy4.pdf",bbox_inches='tight')
+            plt.show()
+
+    #    # Array filtering
+    # dataArrayFiltered, eventsArrayFiltered = [], []
+    # for i in range(0,10):
+    #     random_arrays = dataArray[i][:4000]
+    #     random_events = eventsArray[i][:4000]
+    #     dataArrayFiltered.append(random_arrays)
+    #     eventsArrayFiltered.append(random_events)
+    
+    # dataArrayFiltered = [item[:][:, 1, :] for item in dataArrayFiltered]
+    # A = np.array(dataArrayFiltered)
+    # B = np.array(eventsArrayFiltered)
+    # C = A.reshape(-1, A.shape[-1])
+    # D = B.reshape(-1)
 
 
     # CNN Model creation
-    model1 = CNNModel1.CNNModel(input)
-    model2 = CNNModel2.CNNModel(input)
-    
-    input = tf.keras.Input(shape=(100,1), name='input')
-    models = [model1, model2]
-    outputs = [model(input) for model in models]
-    x = tf.keras.layers.Concatenate()(outputs)
-
-    output = tf.keras.layers.Dense(64, activation='relu')(x) 
-    output = tf.keras.layers.Dropout( 0.2, noise_shape=None, seed=None)(output)
-    output = tf.keras.layers.Dense(1, activation='sigmoid')(output)
-    conc_model = tf.keras.Model(input, output, name= 'Concatenated_Model')
-    conc_model.summary()
+    model = CNNModel.CNNModel()
 
     # Splitting the data
     train_ratio = 0.7
@@ -90,6 +116,7 @@ if __name__ == "__main__":
 
 
     # Define the hyperparameters for Adam optimizer
+    #learning_rate = 1.2341e-07
     learning_rate = 0.001
     beta1 = 0.9
     beta2 = 0.999
@@ -104,11 +131,11 @@ if __name__ == "__main__":
     )
 
     initial_learning_rate = 0.001
-    #conc_model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=initial_learning_rate), loss='binary_crossentropy', metrics=['accuracy'])
-    conc_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    #model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=initial_learning_rate), loss='binary_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
     
-    history = conc_model.fit(
+    history = model.fit(
         x=train_data,
         y=train_labels,
         batch_size=64,
@@ -139,20 +166,6 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
+    test_loss, test_accuracy = model.evaluate(test_data, test_labels)
 
-    test_loss, test_accuracy = conc_model.evaluate(test_data, test_labels)
-
-    predictions = conc_model.predict(test_data)
-    rounded_predictions = np.round(predictions)
-
-    # Calculate confusion matrix
-    conf_matrix = confusion_matrix(test_labels, rounded_predictions)
-
-    # Plot confusion matrix
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['Alerta', 'Sonolência'], yticklabels=['Alerta', 'Sonolência'])
-    plt.xlabel('Labels Previstos')
-    plt.ylabel('Labels verdadeiros')
-    plt.tight_layout()
-    plt.show()
 
